@@ -167,3 +167,27 @@ El límite recomendado en `.env` para el backend queda en `384M`; es una configu
 ### Configuración local
 
 Se generó un `.env` local ignorado por Git con una contraseña aleatoria y se actualizó la contraseña del rol PostgreSQL existente antes de recrear el stack. El secreto no se incluye en este informe ni en el registro de auditoría. La plantilla `.env.example` conserva únicamente un valor de demostración que debe cambiarse antes de usarla en otra instalación.
+
+## Reto 5 — Modularización del backend y perfiles CORS
+
+**Fecha de validación:** 2026-10-29 (hora local, UTC-05:00).
+
+El backend Maven, el Dockerfile, `.dockerignore` y Nginx se reorganizaron bajo `backend/`. Compose y las plantillas de entorno permanecen en la raíz. El Compose construye con `context: ./backend`; la configuración de Nginx se monta desde `./backend/nginx/default.conf`. El volumen de desarrollo conserva el nombre histórico `taller-docker-_postgres_data`; el perfil productivo usa un volumen configurable distinto.
+
+### Perfiles y política CORS
+
+| Perfil / prueba | Resultado observado |
+|---|---|
+| `dev`, `OPTIONS /api/alertas` con `Origin: http://localhost:3000`, método `POST`, headers `content-type,authorization` | HTTP 200; `Access-Control-Allow-Origin` coincide exactamente con localhost:3000 y `Access-Control-Allow-Credentials: true`. |
+| `dev`, mismo preflight con `Origin: https://untrusted.example` | HTTP 403; sin autorización CORS. |
+| `prod`, `CORS_ALLOWED_ORIGINS` vacío | El perfil y los tres servicios iniciaron saludables; el preflight fue rechazado y no se emitió `Access-Control-Allow-Origin`. |
+| `prod`, origen configurado `https://app.ecoair.example` en entorno de prueba aislado | HTTP 200 y permiso de credenciales para ese origen exacto; `https://untrusted.example` no recibió `Access-Control-Allow-Origin`. El stack y volumen de prueba aislados se eliminaron al finalizar. |
+
+Las credenciales CORS solo se habilitan con una lista explícita de orígenes; no se usa `*`. La configuración ahora también rechaza `*` al iniciar mediante una prueba unitaria. La API no implementa autenticación ni roles: CORS no sustituye autorización.
+
+### Validación tras la reorganización
+
+- `mvn test` desde `backend/`: `BUILD SUCCESS`; 1 prueba unitaria, sin fallos.
+- `docker compose --env-file .env config --quiet` y validación de la plantilla de producción: correctas.
+- Construcción de imagen desde `backend/` y healthcheck HTTP a través de Nginx: correctos.
+- Al cierre, el stack de desarrollo quedó detenido como estaba antes de esta validación; se preservó el volumen PostgreSQL existente.

@@ -1,15 +1,77 @@
 # Taller Docker — EcoAir Backend
 
-Backend Spring Boot de EcoAir, empaquetado en Docker y ejecutado con Docker Compose detrás de Nginx, con PostgreSQL persistente.
+Backend Spring Boot de EcoAir, organizado como módulo independiente y ejecutado con Docker Compose detrás de Nginx y PostgreSQL.
 
-## Tecnologías
+## Estructura
 
-- Java 17, Spring Boot 3.3.5 y Maven
-- Docker Compose
-- Nginx como reverse proxy
-- PostgreSQL 16
-- H2 para ejecución local con Maven
-- Spring Data JPA y Spring Boot Actuator
+```text
+.
+├── backend/
+│   ├── Dockerfile
+│   ├── .dockerignore
+│   ├── pom.xml
+│   ├── nginx/default.conf
+│   └── src/main/
+│       ├── java/com/ecoair/
+│       │   ├── config/CorsConfig.java
+│       │   └── alerta/
+│       └── resources/
+│           ├── application.properties
+│           ├── application-dev.properties
+│           └── application-prod.properties
+├── docker-compose.yml
+├── .env.dev.example
+└── .env.prod.example
+```
+
+El proyecto solo incluye backend; no se agrega frontend. La API actual de alertas es `/api/alertas`.
+
+## Ambientes y perfiles
+
+Docker Compose usa un solo archivo de orquestación y selecciona el perfil de Spring Boot mediante `SPRING_PROFILES_ACTIVE` en el archivo de entorno:
+
+- `dev`: CORS permite `http://localhost:3000` y `http://localhost:5173` por defecto. La aplicación local sin Docker continúa usando H2; Compose conecta el backend con PostgreSQL.
+- `prod`: CORS no permite orígenes cruzados hasta configurar explícitamente `CORS_ALLOWED_ORIGINS` con el origen HTTPS real del frontend.
+
+No uses `*` con credenciales CORS. Las credenciales están habilitadas para los orígenes listados; sin un origen permitido, el navegador no comparte la respuesta con el cliente. **CORS no sustituye autenticación ni autorización**: esta API todavía no implementa login ni roles.
+
+### Desarrollo con Compose
+
+En una instalación nueva, copia la plantilla de desarrollo y cambia la contraseña de ejemplo:
+
+```powershell
+Copy-Item .env.dev.example .env.dev
+```
+
+En la carpeta que ya tiene un `.env` local con la contraseña de la base persistente, consérvalo y puedes usarlo directamente; el perfil por defecto de Compose es `dev`:
+
+```powershell
+docker compose --env-file .env up --build -d
+```
+
+Para usar `.env.dev`, confirma que su contraseña PostgreSQL corresponda a la base que vas a usar. La plantilla usa el volumen de desarrollo, por lo que cambiar la contraseña de entorno no cambia automáticamente la contraseña almacenada en un volumen ya inicializado.
+
+```powershell
+docker compose --env-file .env.dev up --build -d
+```
+
+### Producción
+
+Prepara un archivo local que no se sube a Git:
+
+```powershell
+Copy-Item .env.prod.example .env.prod
+```
+
+Cambia `POSTGRES_PASSWORD` por un secreto fuerte y único. Mientras no exista el dominio frontend, deja `CORS_ALLOWED_ORIGINS` vacío. Cuando se defina, configura el origen exacto, por ejemplo `https://app.example.com` (sin ruta y sin `*`).
+
+```powershell
+docker compose --env-file .env.prod up --build -d
+```
+
+La plantilla productiva usa un volumen diferente (`ecoair-postgres-prod-data`) para separar los datos de producción de los de desarrollo.
+
+Los archivos `.env`, `.env.dev` y `.env.prod` son locales e ignorados por Git. No reemplaces una contraseña que ya corresponde a un volumen PostgreSQL existente sin coordinar la rotación de la contraseña en la base.
 
 ## Arquitectura
 
@@ -18,87 +80,61 @@ Cliente --HTTP:80--> Nginx --red edge--> Backend Spring Boot
                                       Backend --red interna data--> PostgreSQL
 ```
 
-Solo Nginx publica un puerto al host. El backend no publica `8080` y PostgreSQL no publica `5432`. Nginx y backend comparten la red Bridge `edge`; backend y PostgreSQL comparten la red Bridge interna `data`. El volumen nombrado `postgres_data` conserva los datos de PostgreSQL al recrear los contenedores.
+Solo Nginx publica un puerto al host. El backend no publica `8080` y PostgreSQL no publica `5432`. Nginx y backend comparten la red Bridge `edge`; backend y PostgreSQL comparten la red Bridge interna `data`. El volumen de base de datos se conserva al recrear contenedores.
 
-## Iniciar con Docker Compose
+## Verificación y CORS
 
-Requiere Docker Desktop o Docker Engine con Docker Compose v2.
-
-En PowerShell:
+El health endpoint y la API se consultan a través de Nginx:
 
 ```powershell
-Copy-Item .env.example .env
-```
-
-En macOS/Linux:
-
-```bash
-cp .env.example .env
-```
-
-Edita `.env` y cambia `POSTGRES_PASSWORD` antes de iniciar. La contraseña del ejemplo es solo para desarrollo local.
-
-Construye y levanta los servicios:
-
-```bash
-docker compose up --build -d
 docker compose ps
-docker compose logs --tail=100
+curl.exe -i http://localhost/actuator/health
+curl.exe -i http://localhost/api/alertas
 ```
 
-Compose espera a que PostgreSQL y el backend pasen sus healthchecks antes de arrancar el servicio dependiente.
+Preflight permitido en desarrollo (solicitud POST con las cabeceras `Content-Type` y `Authorization`):
 
-## Verificar
-
-Nginx es la entrada pública en el puerto 80:
-
-```bash
-curl http://localhost/actuator/health
-curl http://localhost/api/alertas
+```powershell
+curl.exe -i -X OPTIONS http://localhost/api/alertas `
+  -H "Origin: http://localhost:3000" `
+  -H "Access-Control-Request-Method: POST" `
+  -H "Access-Control-Request-Headers: content-type,authorization"
 ```
 
-La respuesta del health endpoint debe contener `"status":"UP"`. Para crear una alerta de prueba:
+Debe responder con cabeceras `Access-Control-Allow-Origin: http://localhost:3000`, `Access-Control-Allow-Credentials: true`, los métodos permitidos y las cabeceras solicitadas.
 
-```bash
-curl -X POST http://localhost/api/alertas \
-  -H "Content-Type: application/json" \
-  -d "{\"estacion\":\"Centro\",\"tipo\":\"PM2.5\",\"valor\":18.4,\"severidad\":\"MODERADA\",\"fecha\":\"2026-10-22T12:00:00Z\"}"
+Prueba negativa con un origen que no está en la lista:
+
+```powershell
+curl.exe -i -X OPTIONS http://localhost/api/alertas `
+  -H "Origin: https://origen-no-autorizado.example" `
+  -H "Access-Control-Request-Method: POST" `
+  -H "Access-Control-Request-Headers: content-type,authorization"
 ```
 
-Consultar nuevamente `http://localhost/api/alertas` debe mostrar la alerta creada.
+El origen no autorizado no debe recibir `Access-Control-Allow-Origin`. En el perfil `prod` con `CORS_ALLOWED_ORIGINS` vacío, ningún origen cross-origin debe recibir permiso.
 
-## Operación y persistencia
+El backend aplica CORS solo a `/api/**`; se permiten `GET`, `POST` y `OPTIONS`, y las cabeceras `Content-Type` y `Authorization`.
 
-```bash
-docker compose ps
-docker compose logs -f backend
-docker compose logs -f nginx
-docker compose restart
-docker compose down
+## Operación
+
+```powershell
+docker compose --env-file .env ps
+docker compose --env-file .env logs --tail=100
+docker compose --env-file .env restart
+docker compose --env-file .env stop
+docker compose --env-file .env down
 ```
 
-`docker compose down` elimina los contenedores y redes del proyecto, pero conserva `postgres_data`. No uses `docker compose down -v` salvo que quieras borrar permanentemente la base de datos. Después de `down` y `up -d`, vuelve a consultar `/api/alertas` para confirmar la persistencia.
-
-Los límites de memoria se pueden ajustar en `.env` (`BACKEND_MEMORY_LIMIT`, `POSTGRES_MEMORY_LIMIT`, `NGINX_MEMORY_LIMIT`). La auditoría local observó mayor margen con `384M` para el backend que con `256M`; son valores de partida y deben contrastarse con el equipo donde se ejecuta.
+`docker compose down` elimina contenedores y redes, pero conserva el volumen. No uses `docker compose down -v` salvo que quieras borrar permanentemente la base de datos. Para comprobar persistencia, consulta `/api/alertas`, detén y vuelve a iniciar Compose, y consulta la ruta otra vez.
 
 ## Ejecución local sin Docker
 
-Requiere Java 17 y Maven. Esta ejecución utiliza H2 en memoria:
+Requiere Java 17 y Maven. Desde `backend/`, el perfil `dev` es el predeterminado y utiliza H2 en memoria:
 
-```bash
+```powershell
+cd backend
 mvn spring-boot:run
 ```
 
 La aplicación queda disponible en `http://localhost:8080`.
-
-## Diferencias frente al flujo anterior
-
-| Antes | Con Docker Compose |
-|---|---|
-| `docker build` y `docker run` manuales para un único backend | Compose construye y coordina Nginx, backend y PostgreSQL |
-| El backend publica `8080` al host | Solo Nginx publica `80`; backend y PostgreSQL no tienen puertos publicados |
-| H2 en memoria pierde datos al reiniciar | PostgreSQL usa el volumen `postgres_data` |
-| Sin proxy ni redes separadas | Nginx reenvía solicitudes y la base de datos queda en una red interna |
-| Verificación manual del contenedor | Healthchecks y dependencias de arranque declaradas en Compose |
-
-La ejecución anterior se conserva en el informe como baseline. Los nuevos resultados de arranque, memoria y salud deben interpretarse para esta topología con PostgreSQL y Nginx.
