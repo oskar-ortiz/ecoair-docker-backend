@@ -18,7 +18,37 @@ Cliente --HTTP:80--> Nginx --red edge--> Backend Spring Boot
                                       Backend --red interna data--> PostgreSQL
 ```
 
-Solo Nginx publica un puerto al host. El backend no publica `8080` y PostgreSQL no publica `5432`. Nginx y backend comparten la red Bridge `edge`; backend y PostgreSQL comparten la red Bridge interna `data`. El volumen nombrado `postgres_data` conserva los datos de PostgreSQL al recrear los contenedores.
+Solo Nginx publica un puerto al host. El backend no publica `8080` y PostgreSQL no publica `5432`. Nginx y backend comparten la red Bridge `edge`; backend y PostgreSQL comparten la red Bridge interna `data` con acceso privado. La base de datos se persiste con el volumen `postgres_data` para evitar pérdida de datos en reinicios o recreaciones del contenedor.
+
+## Architecture & Container Topology
+
+```mermaid
+flowchart TD
+    Client[Cliente externo / navegador / consumidor HTTP] -->|HTTP 80| Nginx[Nginx
+Reverse Proxy
+Puerto 80 expuesto al host
+Red: edge]
+
+    subgraph Edge[Bridge network: edge]
+        Nginx
+    end
+
+    Nginx -->|Proxy HTTP / reenvío seguro| Backend[Spring Boot Backend
+Java 17
+Aplicación API REST]
+
+    subgraph Data[Bridge network: data]
+        Backend
+        Postgres[(PostgreSQL 16
+Base de datos del sistema)]
+    end
+
+    Backend -->|Conexión interna privada| Postgres
+    Postgres -->|Persistencia durable| Volume[(postgres_data
+Volume persistente)]
+```
+
+La topología sigue el principio de mínimo exposure: el cliente accede a la aplicación únicamente a través de Nginx en el puerto 80; el backend queda en una red interna y la base de datos permanece aislada en la red `data`, sin puertos publicados al host. El volumen `postgres_data` garantiza la retención de información ante reinicios, recreaciones o actualizaciones de contenedores.
 
 ## Iniciar con Docker Compose
 
@@ -77,9 +107,9 @@ docker compose restart
 docker compose down
 ```
 
-`docker compose down` elimina los contenedores y redes del proyecto, pero conserva `postgres_data`. No uses `docker compose down -v` salvo que quieras borrar permanentemente la base de datos. Después de `down` y `up -d`, vuelve a consultar `/api/alertas` para confirmar la persistencia.
+`docker compose down` elimina los contenedores y redes del proyecto, pero conserva `postgres_data`. No uses `docker compose down -v` salvo que quieras borrar permanentemente la base de datos. Despliega de forma segura con `docker compose up -d` y verifica con `docker compose ps` y `docker compose logs -f`.
 
-Los límites de memoria se pueden ajustar en `.env` (`BACKEND_MEMORY_LIMIT`, `POSTGRES_MEMORY_LIMIT`, `NGINX_MEMORY_LIMIT`). La auditoría local observó mayor margen con `384M` para el backend que con `256M`; son valores de partida y deben contrastarse con el equipo donde se ejecuta.
+Los límites de memoria se pueden ajustar en `.env` (`BACKEND_MEMORY_LIMIT`, `POSTGRES_MEMORY_LIMIT`, `NGINX_MEMORY_LIMIT`). La auditoría local observó mayor margen con `384M` para el backend que soporta adecuadamente la carga; PostgreSQL y Nginx conservan recursos para mantener estabilidad del sistema en un entorno acotado.
 
 ## Ejecución local sin Docker
 
