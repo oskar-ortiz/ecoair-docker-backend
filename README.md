@@ -24,31 +24,44 @@ Solo Nginx publica un puerto al host. El backend no publica `8080` y PostgreSQL 
 
 ```mermaid
 flowchart TD
-    Client[Cliente externo / navegador / consumidor HTTP] -->|HTTP 80| Nginx[Nginx
+    Client[Client / External Consumer
+HTTP over port 80] -->|HTTP ingress| Nginx[Nginx
 Reverse Proxy
-Puerto 80 expuesto al host
-Red: edge]
+Port 80 exposed on host
+Network: edge]
 
-    subgraph Edge[Bridge network: edge]
+    subgraph Edge["Bridge Network: edge"]
         Nginx
     end
 
-    Nginx -->|Proxy HTTP / reenvío seguro| Backend[Spring Boot Backend
+    Nginx -->|Proxy / routing| Backend[Spring Boot Backend
 Java 17
-Aplicación API REST]
+Application API]
 
-    subgraph Data[Bridge network: data]
+    subgraph Data["Bridge Network: data"]
         Backend
         Postgres[(PostgreSQL 16
-Base de datos del sistema)]
+Database Service)]
     end
 
-    Backend -->|Conexión interna privada| Postgres
-    Postgres -->|Persistencia durable| Volume[(postgres_data
-Volume persistente)]
+    Backend -->|Private internal communication| Postgres
+    Postgres -->|Persistent storage| Volume[(postgres_data
+Named Docker Volume)]
 ```
 
-La topología sigue el principio de mínimo exposure: el cliente accede a la aplicación únicamente a través de Nginx en el puerto 80; el backend queda en una red interna y la base de datos permanece aislada en la red `data`, sin puertos publicados al host. El volumen `postgres_data` garantiza la retención de información ante reinicios, recreaciones o actualizaciones de contenedores.
+### Topology Notes
+- The client reaches the application only through Nginx on port 80.
+- Nginx is the single public entry point and acts as the reverse proxy.
+- The Spring Boot backend runs in the isolated internal network `data` and is not exposed directly to the host.
+- PostgreSQL also remains isolated in the same private network and does not expose port 5432 to the host.
+- The named volume `postgres_data` ensures persistence across restarts and container recreation events.
+- This pattern reduces the attack surface, improves network isolation, and keeps the database layer private and controlled.
+
+### Architecture Summary
+- Public access: `HTTP 80` -> Nginx
+- Internal access: `Backend <-> PostgreSQL` on private Docker network `data`
+- Persistence: `postgres_data` mounted on PostgreSQL
+- Security posture: only one service is exposed to the host; the rest remain private
 
 ## Iniciar con Docker Compose
 
