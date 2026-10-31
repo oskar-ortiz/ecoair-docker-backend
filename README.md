@@ -1,4 +1,4 @@
-# Taller Docker — EcoAir Backend
+# Docker — EcoAir Backend
 
 Backend Spring Boot de EcoAir, empaquetado en Docker y ejecutado con Docker Compose detrás de Nginx, con PostgreSQL persistente.
 
