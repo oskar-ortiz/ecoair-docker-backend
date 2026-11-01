@@ -2,6 +2,46 @@
 
 Backend Spring Boot de EcoAir, empaquetado en Docker y ejecutado con Docker Compose detrás de Nginx, con PostgreSQL persistente.
 
+## Portfolio & Author
+
+- Portfolio: https://oskar-ortiz.vercel.app
+- GitHub: https://github.com/oskar-ortiz
+- This implementation reflects a production-oriented container topology designed around network isolation, reverse proxying, resiliency, and persistence for a Java 17 backend service.
+
+## Enterprise Architecture Overview
+
+```mermaid
+flowchart TD
+    Client[External Client / Browser / API Consumer] -->|HTTP 80| Nginx[NGINX
+Reverse Proxy
+Public entry point
+Network: edge]
+
+    subgraph Edge[Bridge Network: edge]
+        Nginx
+    end
+
+    Nginx -->|Proxy routing| Backend[Spring Boot Backend
+Java 17
+Application Services]
+
+    subgraph Data[Bridge Network: data]
+        Backend
+        Postgres[(PostgreSQL 16
+Persistent Data Layer)]
+    end
+
+    Backend -->|Private service communication| Postgres
+    Postgres -->|Durable storage| Volume[(postgres_data
+Named Docker Volume)]
+```
+
+### Design Principles
+- Public access is restricted to a single ingress layer: Nginx on port 80.
+- The application tier remains isolated in an internal bridge network, reducing the attack surface.
+- PostgreSQL is decoupled from direct host exposure and persists through a dedicated named volume.
+- This topology aligns with modern container patterns for secure deployment, maintainability, and operational resilience.
+
 ## Tecnologías
 
 - Java 17, Spring Boot 3.3.5 y Maven
