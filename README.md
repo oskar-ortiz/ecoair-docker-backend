@@ -1,109 +1,49 @@
-# Docker — EcoAir Backend
+# EcoAir Backend
 
-Backend Spring Boot de EcoAir, empaquetado en Docker y ejecutado con Docker Compose detrás de Nginx, con PostgreSQL persistente.
+Backend Spring Boot de EcoAir, diseñado para operar con Docker Compose y Nginx como punto de entrada público, con PostgreSQL como capa de persistencia y redes internas para aislamiento de servicios.
 
-## Portfolio & Author
+## Autoría y portafolio
 
 - Portfolio: https://oskar-ortiz.vercel.app
 - GitHub: https://github.com/oskar-ortiz
-- This implementation reflects a production-oriented container topology designed around network isolation, reverse proxying, resiliency, and persistence for a Java 17 backend service.
 
-## Enterprise Architecture Overview
+## Visión arquitectónica empresarial
 
 ```mermaid
 flowchart TD
-    Client[External Client / Browser / API Consumer] -->|HTTP 80| Nginx[NGINX
-Reverse Proxy
-Public entry point
-Network: edge]
+    Cliente[Cliente / Navegador / Consumer] -->|HTTP 80| Nginx[NGINX<br/>Reverse Proxy<br/>Punto de entrada público<br/>Red: edge]
 
-    subgraph Edge[Bridge Network: edge]
+    subgraph Edge[Red bridge: edge]
         Nginx
     end
 
-    Nginx -->|Proxy routing| Backend[Spring Boot Backend
-Java 17
-Application Services]
+    Nginx -->|Routing y proxy| Backend[Spring Boot Backend<br/>Java 17<br/>Servicios de la aplicación]
 
-    subgraph Data[Bridge Network: data]
+    subgraph Data[Red bridge: data]
         Backend
-        Postgres[(PostgreSQL 16
-Persistent Data Layer)]
+        Postgres[(PostgreSQL 16<br/>Capa de persistencia)]
     end
 
-    Backend -->|Private service communication| Postgres
-    Postgres -->|Durable storage| Volume[(postgres_data
-Named Docker Volume)]
+    Backend -->|Comunicación interna privada| Postgres
+    Postgres -->|Almacenamiento persistente| Volume[(postgres_data<br/>Docker volume nombrado)]
 ```
 
-### Design Principles
-- Public access is restricted to a single ingress layer: Nginx on port 80.
-- The application tier remains isolated in an internal bridge network, reducing the attack surface.
-- PostgreSQL is decoupled from direct host exposure and persists through a dedicated named volume.
-- This topology aligns with modern container patterns for secure deployment, maintainability, and operational resilience.
+### Principios de diseño
+- El acceso público queda centralizado en NGINX sobre el puerto 80.
+- La capa de aplicación permanece aislada en una red interna del contenedor.
+- PostgreSQL no expone el puerto 5432 al host y conserva datos con un volumen dedicado.
+- El diseño reduce la superficie de ataque y mejora la seguridad, consistencia operativa y mantenibilidad del sistema.
 
-## Tecnologías
+## Stack tecnológico
 
 - Java 17, Spring Boot 3.3.5 y Maven
 - Docker Compose
-- Nginx como reverse proxy
+- NGINX como Reverse Proxy
 - PostgreSQL 16
 - H2 para ejecución local con Maven
 - Spring Data JPA y Spring Boot Actuator
 
-## Arquitectura
-
-```text
-Cliente --HTTP:80--> Nginx --red edge--> Backend Spring Boot
-                                      Backend --red interna data--> PostgreSQL
-```
-
-Solo Nginx publica un puerto al host. El backend no publica `8080` y PostgreSQL no publica `5432`. Nginx y backend comparten la red Bridge `edge`; backend y PostgreSQL comparten la red Bridge interna `data` con acceso privado. La base de datos se persiste con el volumen `postgres_data` para evitar pérdida de datos en reinicios o recreaciones del contenedor.
-
-## Architecture & Container Topology
-
-```mermaid
-flowchart TD
-    Client[Client / External Consumer
-HTTP over port 80] -->|HTTP ingress| Nginx[Nginx
-Reverse Proxy
-Port 80 exposed on host
-Network: edge]
-
-    subgraph Edge["Bridge Network: edge"]
-        Nginx
-    end
-
-    Nginx -->|Proxy / routing| Backend[Spring Boot Backend
-Java 17
-Application API]
-
-    subgraph Data["Bridge Network: data"]
-        Backend
-        Postgres[(PostgreSQL 16
-Database Service)]
-    end
-
-    Backend -->|Private internal communication| Postgres
-    Postgres -->|Persistent storage| Volume[(postgres_data
-Named Docker Volume)]
-```
-
-### Topology Notes
-- The client reaches the application only through Nginx on port 80.
-- Nginx is the single public entry point and acts as the reverse proxy.
-- The Spring Boot backend runs in the isolated internal network `data` and is not exposed directly to the host.
-- PostgreSQL also remains isolated in the same private network and does not expose port 5432 to the host.
-- The named volume `postgres_data` ensures persistence across restarts and container recreation events.
-- This pattern reduces the attack surface, improves network isolation, and keeps the database layer private and controlled.
-
-### Architecture Summary
-- Public access: `HTTP 80` -> Nginx
-- Internal access: `Backend <-> PostgreSQL` on private Docker network `data`
-- Persistence: `postgres_data` mounted on PostgreSQL
-- Security posture: only one service is exposed to the host; the rest remain private
-
-## Iniciar con Docker Compose
+## Requisitos y arranque
 
 Requiere Docker Desktop o Docker Engine con Docker Compose v2.
 
@@ -131,9 +71,9 @@ docker compose logs --tail=100
 
 Compose espera a que PostgreSQL y el backend pasen sus healthchecks antes de arrancar el servicio dependiente.
 
-## Verificar
+## Verificación
 
-Nginx es la entrada pública en el puerto 80:
+NGINX es la entrada pública en el puerto 80:
 
 ```bash
 curl http://localhost/actuator/health
@@ -160,9 +100,9 @@ docker compose restart
 docker compose down
 ```
 
-`docker compose down` elimina los contenedores y redes del proyecto, pero conserva `postgres_data`. No uses `docker compose down -v` salvo que quieras borrar permanentemente la base de datos. Despliega de forma segura con `docker compose up -d` y verifica con `docker compose ps` y `docker compose logs -f`.
+`docker compose down` elimina los contenedores y redes del proyecto, pero conserva `postgres_data`. No uses `docker compose down -v` salvo que quieras borrar permanentemente la base de datos.
 
-Los límites de memoria se pueden ajustar en `.env` (`BACKEND_MEMORY_LIMIT`, `POSTGRES_MEMORY_LIMIT`, `NGINX_MEMORY_LIMIT`). La auditoría local observó mayor margen con `384M` para el backend que soporta adecuadamente la carga; PostgreSQL y Nginx conservan recursos para mantener estabilidad del sistema en un entorno acotado.
+Los límites de memoria se pueden ajustar en `.env` (`BACKEND_MEMORY_LIMIT`, `POSTGRES_MEMORY_LIMIT`, `NGINX_MEMORY_LIMIT`). La auditoría local observó mayor margen con `384M` para el backend que soporta adecuadamente la carga; PostgreSQL y NGINX conservan recursos para mantener estabilidad del sistema en un entorno acotado.
 
 ## Ejecución local sin Docker
 
@@ -178,10 +118,10 @@ La aplicación queda disponible en `http://localhost:8080`.
 
 | Antes | Con Docker Compose |
 |---|---|
-| `docker build` y `docker run` manuales para un único backend | Compose construye y coordina Nginx, backend y PostgreSQL |
-| El backend publica `8080` al host | Solo Nginx publica `80`; backend y PostgreSQL no tienen puertos publicados |
+| `docker build` y `docker run` manuales para un único backend | Compose construye y coordina NGINX, backend y PostgreSQL |
+| El backend publica `8080` al host | Solo NGINX publica `80`; backend y PostgreSQL no tienen puertos publicados |
 | H2 en memoria pierde datos al reiniciar | PostgreSQL usa el volumen `postgres_data` |
-| Sin proxy ni redes separadas | Nginx reenvía solicitudes y la base de datos queda en una red interna |
+| Sin proxy ni redes separadas | NGINX reenvía solicitudes y la base de datos queda en una red interna |
 | Verificación manual del contenedor | Healthchecks y dependencias de arranque declaradas en Compose |
 
-La ejecución anterior se conserva en el informe como baseline. Los nuevos resultados de arranque, memoria y salud deben interpretarse para esta topología con PostgreSQL y Nginx.
+La ejecución anterior se conserva en el informe como línea base. Los resultados actuales de arranque, memoria y salud deben interpretarse para esta topología con PostgreSQL y NGINX.
